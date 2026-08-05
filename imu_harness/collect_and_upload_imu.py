@@ -154,6 +154,14 @@ def main() -> int:
         accel_mag = [sum(v * v for v in row) ** 0.5 for row in accel_rows]
         print(f"  {len(values)} rows | accel magnitude min={min(accel_mag):.2f} max={max(accel_mag):.2f} m/s^2"
               f" | first row: {values[0]}")
+
+        # Hard guard: a stalled I2C bus (e.g. a jumper wire flexing loose
+        # while the wearer moves) makes the BNO055 driver return all-zero
+        # rows silently instead of erroring. Never upload that as real data.
+        zero_rows = sum(1 for row in values if all(v == 0 for v in row))
+        if zero_rows / len(values) > 0.3:
+            print(f"  SKIPPED: {zero_rows}/{len(values)} rows are all-zero -- I2C likely dropped out, not uploading")
+            continue
         if label != "idle" and max(accel_mag) < 1.0:
             print("  WARNING: peak accel looks flat for a non-idle label -- motion may not have registered")
 
