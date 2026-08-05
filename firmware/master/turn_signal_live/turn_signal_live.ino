@@ -159,9 +159,45 @@ void loop() {
   Serial.printf("[%s] %.2f (dsp %dms, classify %dms)\n",
                 label, confidence, result.timing.dsp, result.timing.classification);
 
-  if (strcmp(label, "left") == 0) {
+  applyDebounced(label);
+}
+
+// Debounce: a lean-then-return-to-center swing produces a brief opposite-
+// direction signal the model was never trained on (training data was
+// static held-lean windows, not the full natural gesture), so a single
+// opposite-label window right after a real lean is very likely that
+// return swing, not a real direction change. idle is always accepted
+// immediately (fail-safe: never delay turning the signal OFF). Switching
+// between left and right requires two consecutive matching windows.
+const char *currentState = "idle";
+const char *pendingState = "idle";
+int pendingCount = 0;
+
+void applyDebounced(const char *label) {
+  bool isIdle = strcmp(label, "idle") == 0;
+  bool sameAsCurrent = strcmp(label, currentState) == 0;
+
+  if (isIdle || sameAsCurrent) {
+    currentState = isIdle ? "idle" : label;
+    pendingState = currentState;
+    pendingCount = 0;
+  } else {
+    // candidate direction change away from current non-idle state
+    if (strcmp(label, pendingState) == 0) {
+      pendingCount++;
+    } else {
+      pendingState = label;
+      pendingCount = 1;
+    }
+    if (pendingCount >= 2) {
+      currentState = pendingState;
+      pendingCount = 0;
+    }
+  }
+
+  if (strcmp(currentState, "left") == 0) {
     neoPixelShow(COLOR_LEFT_R, COLOR_LEFT_G, COLOR_LEFT_B);
-  } else if (strcmp(label, "right") == 0) {
+  } else if (strcmp(currentState, "right") == 0) {
     neoPixelShow(COLOR_RIGHT_R, COLOR_RIGHT_G, COLOR_RIGHT_B);
   } else {
     neoPixelShow(0, 0, 0);
