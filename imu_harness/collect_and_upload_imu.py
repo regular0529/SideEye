@@ -132,7 +132,9 @@ def main() -> int:
 
     uploaded = 0
     for i in range(1, count + 1):
-        input(f"\nSample {i}/{count} [{label}] -- press Enter when ready")
+        print(f"\nSample {i}/{count} [{label}] -- get ready")
+        winsound.Beep(500, 100)
+        time.sleep(1.5)
         for n in (3, 2, 1):
             print(n)
             winsound.Beep(600, 150)
