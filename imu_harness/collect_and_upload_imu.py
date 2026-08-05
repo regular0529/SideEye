@@ -141,6 +141,16 @@ def main() -> int:
         if len(values) < 10:
             print(f"  Skipped: only {len(values)} rows captured, check wiring/serial")
             continue
+
+        # Sanity check: show the actual data range so you can SEE whether the
+        # motion registered, not just trust that rows came in.
+        accel_rows = [row[:3] for row in values]
+        accel_mag = [sum(v * v for v in row) ** 0.5 for row in accel_rows]
+        print(f"  {len(values)} rows | accel magnitude min={min(accel_mag):.2f} max={max(accel_mag):.2f} m/s^2"
+              f" | first row: {values[0]}")
+        if label != "idle" and max(accel_mag) < 1.0:
+            print("  WARNING: peak accel looks flat for a non-idle label -- motion may not have registered")
+
         try:
             upload_sample(api_key, label, values)
             uploaded += 1
