@@ -203,10 +203,12 @@ void applyDebounced(const char *label) {
     holdUntil = millis() + HOLD_MS;
   }
 
+  // pixels 0 and 6 stay dark (excluded on request) -- skip the first pixel
+  // of each half, light the remaining 5.
   if (strcmp(currentState, "left") == 0) {
-    neoPixelShowHalf(LEFT_HALF_START, HALF_COUNT, AMBER_R, AMBER_G, AMBER_B);
+    neoPixelShowHalf(LEFT_HALF_START + 1, HALF_COUNT - 1, AMBER_R, AMBER_G, AMBER_B);
   } else if (strcmp(currentState, "right") == 0) {
-    neoPixelShowHalf(RIGHT_HALF_START, HALF_COUNT, AMBER_R, AMBER_G, AMBER_B);
+    neoPixelShowHalf(RIGHT_HALF_START + 1, HALF_COUNT - 1, AMBER_R, AMBER_G, AMBER_B);
   } else {
     neoPixelShow(0, 0, 0);
   }
