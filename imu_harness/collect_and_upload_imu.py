@@ -25,6 +25,7 @@ import os
 import sys
 import time
 import urllib.request
+import winsound
 from pathlib import Path
 
 import serial
@@ -134,9 +135,12 @@ def main() -> int:
         input(f"\nSample {i}/{count} [{label}] -- press Enter when ready")
         for n in (3, 2, 1):
             print(n)
-            time.sleep(1)
+            winsound.Beep(600, 150)
+            time.sleep(0.85)
         print(f"GO -- perform the motion now ({window_seconds:.0f}s)")
+        winsound.Beep(1200, 250)
         values = capture_window(port, window_seconds)
+        winsound.Beep(400, 250)
         print("Stop.")
         if len(values) < 10:
             print(f"  Skipped: only {len(values)} rows captured, check wiring/serial")
