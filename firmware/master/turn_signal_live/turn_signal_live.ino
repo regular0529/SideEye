@@ -24,15 +24,17 @@
 #define NEOPIXEL_COUNT 12
 constexpr uint32_t SAMPLE_INTERVAL_MS = 1000 / EI_CLASSIFIER_FREQUENCY;  // 20ms @ 50Hz
 
-// PDR_SideEye.md section 3 color contract
-// orange/yellow were indistinguishable at USB-safe brightness -- switched to
-// red/blue for maximum visual contrast (2026-08-05).
-#define COLOR_LEFT_R  255
-#define COLOR_LEFT_G  0
-#define COLOR_LEFT_B  0     // red
-#define COLOR_RIGHT_R 0
-#define COLOR_RIGHT_G 0
-#define COLOR_RIGHT_B 255   // blue
+// Real turn-signal look (2026-08-06): both directions use the same amber
+// color; only WHICH HALF of the 12-pixel ring lights up differs, like an
+// actual vehicle blinker. Pixel index order depends on the ring's internal
+// wiring direction -- if left/right come out swapped on the physical
+// helmet, swap LEFT_HALF_START and RIGHT_HALF_START.
+#define AMBER_R 255
+#define AMBER_G 191
+#define AMBER_B 0
+constexpr int HALF_COUNT = NEOPIXEL_COUNT / 2;
+constexpr int LEFT_HALF_START = 0;
+constexpr int RIGHT_HALF_START = HALF_COUNT;
 
 Adafruit_BNO055 bno(55, BNO_ADDR, &Wire);
 
@@ -58,13 +60,14 @@ void neoPixelBegin() {
   rmt_enable(rmtChannel);
 }
 
-void neoPixelShow(uint8_t red, uint8_t green, uint8_t blue) {
-  red = (uint16_t)red * BRIGHTNESS_SCALE / 255;
-  green = (uint16_t)green * BRIGHTNESS_SCALE / 255;
-  blue = (uint16_t)blue * BRIGHTNESS_SCALE / 255;
+// perPixel[i] = {r,g,b} for pixel i. Lets callers light only some pixels.
+void neoPixelShowPixels(const uint8_t perPixel[NEOPIXEL_COUNT][3]) {
   size_t symbolIndex = 0;
   for (int pixel = 0; pixel < NEOPIXEL_COUNT; pixel++) {
-    const uint8_t grb[] = {green, red, blue};
+    uint8_t r = (uint16_t)perPixel[pixel][0] * BRIGHTNESS_SCALE / 255;
+    uint8_t g = (uint16_t)perPixel[pixel][1] * BRIGHTNESS_SCALE / 255;
+    uint8_t b = (uint16_t)perPixel[pixel][2] * BRIGHTNESS_SCALE / 255;
+    const uint8_t grb[] = {g, r, b};
     for (int component = 0; component < 3; component++) {
       for (int bit = 7; bit >= 0; bit--) {
         const bool one = grb[component] & (1 << bit);
@@ -79,6 +82,23 @@ void neoPixelShow(uint8_t red, uint8_t green, uint8_t blue) {
   rmt_transmit_config_t transmitConfig = {};
   rmt_transmit(rmtChannel, copyEncoder, frame, sizeof(frame), &transmitConfig);
   rmt_tx_wait_all_done(rmtChannel, -1);
+}
+
+void neoPixelShow(uint8_t red, uint8_t green, uint8_t blue) {
+  uint8_t perPixel[NEOPIXEL_COUNT][3];
+  for (int i = 0; i < NEOPIXEL_COUNT; i++) { perPixel[i][0] = red; perPixel[i][1] = green; perPixel[i][2] = blue; }
+  neoPixelShowPixels(perPixel);
+}
+
+// Lights `count` contiguous pixels starting at `start` in the given color,
+// everything else off -- mimics a real turn-signal blinker (one side lit).
+void neoPixelShowHalf(int start, int count, uint8_t red, uint8_t green, uint8_t blue) {
+  uint8_t perPixel[NEOPIXEL_COUNT][3] = {};
+  for (int n = 0; n < count; n++) {
+    int i = (start + n) % NEOPIXEL_COUNT;
+    perPixel[i][0] = red; perPixel[i][1] = green; perPixel[i][2] = blue;
+  }
+  neoPixelShowPixels(perPixel);
 }
 
 // ---- rolling window buffer fed to the classifier ----
@@ -184,9 +204,9 @@ void applyDebounced(const char *label) {
   }
 
   if (strcmp(currentState, "left") == 0) {
-    neoPixelShow(COLOR_LEFT_R, COLOR_LEFT_G, COLOR_LEFT_B);
+    neoPixelShowHalf(LEFT_HALF_START, HALF_COUNT, AMBER_R, AMBER_G, AMBER_B);
   } else if (strcmp(currentState, "right") == 0) {
-    neoPixelShow(COLOR_RIGHT_R, COLOR_RIGHT_G, COLOR_RIGHT_B);
+    neoPixelShowHalf(RIGHT_HALF_START, HALF_COUNT, AMBER_R, AMBER_G, AMBER_B);
   } else {
     neoPixelShow(0, 0, 0);
   }
