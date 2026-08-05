@@ -26,7 +26,7 @@
 
 #define BNO_ADDR 0x29
 constexpr uint32_t SAMPLE_INTERVAL_MS = 20;   // 50Hz
-constexpr int WINDOW_SAMPLES = 100;           // 2000ms window, matches imu_harness
+constexpr int WINDOW_SAMPLES = 25;            // 500ms window (user times the motion to the GO cue)
 
 const char *AP_SSID = "sideeye-imu";
 const char *AP_PASSWORD = "sideeye123";
@@ -48,6 +48,10 @@ button:disabled{background:#555}
 .count{text-align:center}
 .count b{font-size:22px;display:block}
 #upload{background:#37a}
+canvas{width:100%;background:#000;border-radius:8px;margin-top:8px}
+#legend{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;margin-top:6px}
+#legend span{display:flex;align-items:center;gap:4px}
+#legend i{width:10px;height:10px;display:inline-block;border-radius:2px}
 </style></head><body>
 <h2>SideEye IMU 수집기</h2>
 <select id="label">
@@ -55,8 +59,17 @@ button:disabled{background:#555}
   <option value="left">left (왼쪽 기울임)</option>
   <option value="right">right (오른쪽 기울임)</option>
 </select>
-<button id="go">녹화 시작 (2초)</button>
+<button id="go">녹화 시작 (0.5초)</button>
 <div id="status"></div>
+<canvas id="chart" width="400" height="200"></canvas>
+<div id="legend">
+  <span><i style="background:#e33"></i>accX</span>
+  <span><i style="background:#3e3"></i>accY</span>
+  <span><i style="background:#33e"></i>accZ</span>
+  <span><i style="background:#ee3"></i>gyrX</span>
+  <span><i style="background:#3ee"></i>gyrY</span>
+  <span><i style="background:#e3e"></i>gyrZ</span>
+</div>
 <div id="counts">
   <div class="count">idle<b id="c-idle">0</b></div>
   <div class="count">left<b id="c-left">0</b></div>
@@ -74,6 +87,41 @@ const uploadStatusEl = document.getElementById('uploadStatus');
 
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 
+const chart = document.getElementById('chart');
+const ctx = chart.getContext('2d');
+const CHART_COLORS = ['#e33','#3e3','#33e','#ee3','#3ee','#e3e'];
+
+function drawChart(values) {
+  const w = chart.width, h = chart.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!values.length) return;
+
+  let min = Infinity, max = -Infinity;
+  for (const row of values) for (const v of row) { if (v < min) min = v; if (v > max) max = v; }
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.1;
+  min -= pad; max += pad;
+
+  // zero line
+  ctx.strokeStyle = '#444';
+  ctx.beginPath();
+  const zeroY = h - ((0 - min) / (max - min)) * h;
+  ctx.moveTo(0, zeroY); ctx.lineTo(w, zeroY);
+  ctx.stroke();
+
+  for (let ch = 0; ch < 6; ch++) {
+    ctx.strokeStyle = CHART_COLORS[ch];
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    values.forEach((row, i) => {
+      const x = (i / (values.length - 1)) * w;
+      const y = h - ((row[ch] - min) / (max - min)) * h;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  }
+}
+
 goBtn.onclick = async () => {
   const label = document.getElementById('label').value;
   goBtn.disabled = true;
@@ -86,6 +134,7 @@ goBtn.onclick = async () => {
     counts[label]++;
     document.getElementById('c-'+label).textContent = counts[label];
     statusEl.textContent = `저장됨 (${data.values.length} rows)`;
+    drawChart(data.values);
   } catch (e) {
     statusEl.textContent = '오류: ' + e;
   }
