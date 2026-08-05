@@ -39,13 +39,14 @@
 #define NEOPIXEL_COUNT 12
 // LED_BUILTIN (GPIO21) is inverted: LOW = on, HIGH = off.
 
-// PDR_SideEye.md section 3 color contract
+// PDR_SideEye.md section 3 color contract (red/blue -- orange/yellow were
+// indistinguishable at USB-safe brightness, changed 2026-08-05)
 #define COLOR_LEFT_R  255
-#define COLOR_LEFT_G  128
-#define COLOR_LEFT_B  0     // orange
-#define COLOR_RIGHT_R 255
-#define COLOR_RIGHT_G 255
-#define COLOR_RIGHT_B 0     // yellow
+#define COLOR_LEFT_G  0
+#define COLOR_LEFT_B  0     // red
+#define COLOR_RIGHT_R 0
+#define COLOR_RIGHT_G 0
+#define COLOR_RIGHT_B 255   // blue
 #define COLOR_OK_R    0
 #define COLOR_OK_G    255
 #define COLOR_OK_B    0     // green
