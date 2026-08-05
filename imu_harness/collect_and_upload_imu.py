@@ -131,9 +131,13 @@ def main() -> int:
 
     uploaded = 0
     for i in range(1, count + 1):
-        input(f"\nSample {i}/{count} [{label}] -- press Enter, then perform the motion for {window_seconds:.0f}s")
-        print("Recording...")
+        input(f"\nSample {i}/{count} [{label}] -- press Enter when ready")
+        for n in (3, 2, 1):
+            print(n)
+            time.sleep(1)
+        print(f"GO -- perform the motion now ({window_seconds:.0f}s)")
         values = capture_window(port, window_seconds)
+        print("Stop.")
         if len(values) < 10:
             print(f"  Skipped: only {len(values)} rows captured, check wiring/serial")
             continue
