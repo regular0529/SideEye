@@ -33,8 +33,8 @@ constexpr uint32_t SAMPLE_INTERVAL_MS = 1000 / EI_CLASSIFIER_FREQUENCY;  // 20ms
 #define AMBER_G 191
 #define AMBER_B 0
 constexpr int HALF_COUNT = NEOPIXEL_COUNT / 2;
-constexpr int LEFT_HALF_START = 0;
-constexpr int RIGHT_HALF_START = HALF_COUNT;
+constexpr int LEFT_HALF_START = HALF_COUNT;
+constexpr int RIGHT_HALF_START = 0;
 
 Adafruit_BNO055 bno(55, BNO_ADDR, &Wire);
 
