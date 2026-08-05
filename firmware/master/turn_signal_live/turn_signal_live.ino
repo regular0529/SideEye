@@ -162,37 +162,25 @@ void loop() {
   applyDebounced(label);
 }
 
-// Debounce: a lean-then-return-to-center swing produces a brief opposite-
-// direction signal the model was never trained on (training data was
-// static held-lean windows, not the full natural gesture), so a single
-// opposite-label window right after a real lean is very likely that
-// return swing, not a real direction change. idle is always accepted
-// immediately (fail-safe: never delay turning the signal OFF). Switching
-// between left and right requires two consecutive matching windows.
+// Hold-then-lock: react instantly the moment a lean is classified (no
+// waiting for confirmation -- a real turn signal must snap on immediately).
+// The lean-then-return-to-center swing produces a brief opposite-direction
+// signal the model was never trained on (training data was static held-lean
+// windows, not the full natural gesture) -- instead of trying to tell that
+// apart from a real direction change, just hold whatever state a left/right
+// trigger set for HOLD_MS and ignore every classification in between.
+constexpr uint32_t HOLD_MS = 3000;
 const char *currentState = "idle";
-const char *pendingState = "idle";
-int pendingCount = 0;
+uint32_t holdUntil = 0;
 
 void applyDebounced(const char *label) {
-  bool isIdle = strcmp(label, "idle") == 0;
-  bool sameAsCurrent = strcmp(label, currentState) == 0;
+  if (millis() < holdUntil) {
+    return;  // locked -- ignore classification, keep showing currentState
+  }
 
-  if (isIdle || sameAsCurrent) {
-    currentState = isIdle ? "idle" : label;
-    pendingState = currentState;
-    pendingCount = 0;
-  } else {
-    // candidate direction change away from current non-idle state
-    if (strcmp(label, pendingState) == 0) {
-      pendingCount++;
-    } else {
-      pendingState = label;
-      pendingCount = 1;
-    }
-    if (pendingCount >= 2) {
-      currentState = pendingState;
-      pendingCount = 0;
-    }
+  currentState = label;
+  if (strcmp(label, "left") == 0 || strcmp(label, "right") == 0) {
+    holdUntil = millis() + HOLD_MS;
   }
 
   if (strcmp(currentState, "left") == 0) {
