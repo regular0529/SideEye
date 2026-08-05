@@ -1,5 +1,11 @@
 # XIAO ESP32S3 Edge Impulse Project Record
 
+> ⚠️ **이 문서는 SideEye의 최신 지침이 아닙니다.** 여기 나오는 `background`/`mouse`/`tumbler` 클래스와 Edge Impulse 프로젝트(`1078233`, 키 `EI_API_KEY`)는 SideEye 이전의 옛날 카메라 데모 기록입니다. 이 문서는 PSRAM/카메라 배포 관련 하드웨어 트러블슈팅 참고용으로만 남겨둔 것이고, **실제 작업 지침은 반드시 `PDR_SideEye.md`를 보세요**:
+> - SideEye 카메라 클래스: `vehicle` / `background` (2클래스, PDR 2절)
+> - SideEye Edge Impulse 프로젝트: `1079933` (https://studio.edgeimpulse.com/studio/1079933), 키 `SideEYE_EI_API_KEY`
+>
+> 아래 내용을 SideEye 비전 학습에 그대로 따라 하지 마세요.
+
 ## Goal
 
 Classify the camera view from a Seeed XIAO ESP32S3 Sense into three labels on-device:
