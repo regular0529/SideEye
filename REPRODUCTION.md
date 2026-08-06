@@ -2,7 +2,7 @@
 
 자전거·킥보드 헬멧 좌우에 XIAO ESP32S3 Sense를 하나씩 달아, IMU로 좌/우 기울임(차선변경 의도)을 감지하면 즉시 방향지시등을 켜고, 해당 방향 카메라로 차량 유무를 확인해 위험하면 부저로 경고하는 엣지 우선 웨어러블. 2026 웨어러블 AI 엣지 컴퓨팅 프로젝트 **1등 수상작**.
 
-이 문서 하나로 하드웨어 상태, 아키텍처, 보드별 업로드 파일, 학습된 모델까지 재현에 필요한 전부를 담는다. 세부 설계 배경은 `PDR_SideEye.md`, 배선은 `WIRING_SideEye.md` 참고.
+이 문서 하나로 하드웨어 상태, 아키텍처, 보드별 업로드 파일, 학습된 모델까지 재현에 필요한 전부를 담는다. 세부 설계 배경은 `PDR.md`, 배선은 `WIRING.md` 참고.
 
 ## 1. 하드웨어 구성
 
@@ -56,7 +56,7 @@
 
 ## 5. IMU 모델 특이사항
 
-`models/SideEYE_inferencing_imu5class.zip` (idle/left/right/stop/helmet_on 5클래스)에는 실제로 `background`/`vehicle` 라벨도 섞여 7클래스로 나온다 — 같은 Edge Impulse 프로젝트(1079933)에 초기 비전 실험(CNN 실험, 이후 폐기) 데이터가 섞여 들어간 흔적. 코드에서 `left`/`right`/`stop`/`helmet_on`만 보고 나머지는 무시하므로 동작엔 지장 없으나, 재학습 시 새 프로젝트로 분리 권장.
+`models/imu_5class.zip` (idle/left/right/stop/helmet_on 5클래스)에는 실제로 `background`/`vehicle` 라벨도 섞여 7클래스로 나온다 — 같은 Edge Impulse 프로젝트(1079933)에 초기 비전 실험(CNN 실험, 이후 폐기) 데이터가 섞여 들어간 흔적. 코드에서 `left`/`right`/`stop`/`helmet_on`만 보고 나머지는 무시하므로 동작엔 지장 없으나, 재학습 시 새 프로젝트로 분리 권장.
 
 추가로 실기 테스트에서 `left` 라벨이 과민하게 튀는 편향이 있어, 코드에서 `left` 점수에 -0.15 페널티를 준 뒤 argmax 하도록 보정했다(`firmware/master/sideeye_master/sideeye_master.ino`의 `LEFT_BIAS_PENALTY`). 또한 `left`/`right` 모두 신뢰도 0.75 미만이면 무시하도록 임계값을 걸었다(`TURN_SIGNAL_MIN_CONFIDENCE`) — 그 이하는 잡음성 오탐이었다.
 
@@ -69,7 +69,7 @@ arduino-cli core install esp32:esp32
 arduino-cli lib install "Adafruit BNO055" "Adafruit Unified Sensor" "Adafruit BusIO"
 ```
 
-`models/SideEYE_inferencing_imu5class.zip`, `models/SideEYEVision_inferencing_vision.zip`을 각각 압축 해제해 `<sketchbook>/libraries/SideEYE_inferencing/`, `<sketchbook>/libraries/SideEYEVision_inferencing/`에 넣는다 (`arduino-cli config get directories.user`로 sketchbook 경로 확인).
+`models/imu_5class.zip`, `models/vision_vehicle_detection.zip`을 각각 압축 해제해 `<sketchbook>/libraries/SideEYE_inferencing/`, `<sketchbook>/libraries/SideEYEVision_inferencing/`에 넣는다 (`arduino-cli config get directories.user`로 sketchbook 경로 확인).
 
 ### 6.2 마스터 (`firmware/master/sideeye_master/`)
 

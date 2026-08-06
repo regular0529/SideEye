@@ -7,8 +7,8 @@
 ## 여기부터 보세요
 
 - **[`REPRODUCTION.md`](REPRODUCTION.md)** — 재현 가이드. 하드웨어 상태, 아키텍처, 보드별 업로드 파일, 학습된 모델까지 전부.
-- **[`PDR_SideEye.md`](PDR_SideEye.md)** — 설계 배경/기능 스펙 원본 문서.
-- **[`WIRING_SideEye.md`](WIRING_SideEye.md)** — 배선도.
+- **[`PDR.md`](PDR.md)** — 설계 배경/기능 스펙 원본 문서.
+- **[`WIRING.md`](WIRING.md)** — 배선도.
 
 ## 폴더 구조
 
