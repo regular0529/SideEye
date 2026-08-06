@@ -60,6 +60,27 @@
 
 추가로 실기 테스트에서 `left` 라벨이 과민하게 튀는 편향이 있어, 코드에서 `left` 점수에 -0.15 페널티를 준 뒤 argmax 하도록 보정했다(`firmware/master/sideeye_master/sideeye_master.ino`의 `LEFT_BIAS_PENALTY`). 또한 `left`/`right` 모두 신뢰도 0.75 미만이면 무시하도록 임계값을 걸었다(`TURN_SIGNAL_MIN_CONFIDENCE`) — 그 이하는 잡음성 오탐이었다.
 
+## 5.1 비전 모델(Edge Impulse Arduino 라이브러리) 온디바이스 필수 수정
+
+`models/vision_vehicle_detection.zip`을 재생성하거나 라이브러리를 다시 받을 일이 있으면, ESP32-S3에서 그대로 돌아가지 않으므로 아래 수정이 필요하다 (현재 `firmware/slave/sideeye_slave/sideeye_slave.ino`에는 이미 반영되어 있음):
+
+1. **텐서 아레나 오버플로 방지**: 라이브러리의 `src/edge-impulse-sdk/porting/ei_classifier_porting.h`에서 `EI_MAX_OVERFLOW_BUFFER_COUNT`를 `30` → `2048`로 변경.
+2. **아레나를 PSRAM에 할당** (스케치에 이미 있음):
+   ```cpp
+   #include "esp_heap_caps.h"
+   void *ei_malloc(size_t size) {
+     void *p = heap_caps_aligned_alloc(16, size, MALLOC_CAP_SPIRAM);
+     if (!p) p = heap_caps_aligned_alloc(16, size, MALLOC_CAP_DEFAULT);
+     return p;
+   }
+   void *ei_calloc(size_t n, size_t s) { void *p = ei_malloc(n*s); if (p) memset(p,0,n*s); return p; }
+   void ei_free(void *ptr) { heap_caps_free(ptr); }
+   ```
+3. **컴파일/업로드 둘 다 `PSRAM=opi` 필수** (6.3절 커맨드에 이미 포함됨).
+4. **카메라 프레임 패킹**: 픽셀당 float 하나로 `(r<<16)|(g<<8)|b`.
+5. **XIAO Sense 카메라는 90도 회전돼서 나옴** — 다운스케일하면서 시계방향 회전 보정 필요 (`sx = y*W/H; sy = H-1-(x*H/W)`). 분류 정확도가 이상하면 회전없음/CW/CCW 세 가지로 직접 테스트해서 방향을 확인할 것.
+6. 같은 이름으로 라이브러리를 재설치하는 것이면 **첫 컴파일에 `--clean` 필수** (안 하면 `objs.a ... is not an object` 링크 에러).
+
 ## 6. 보드별 업로드
 
 ### 6.1 사전 준비
