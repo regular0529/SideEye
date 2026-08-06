@@ -1,95 +1,129 @@
 ---
 name: xiao-neopixel
-description: Use this skill whenever a Seeed XIAO ESP32S3 or XIAO ESP32S3 Sense drives a WS2812/WS2812B/NeoPixel ring or strip, especially WCMCU-2812B-12, D1/GPIO2 wiring, a dark ring, an Adafruit_NeoPixel RMT error, or NeoPixel color testing. It provides the hardware-verified direct-RMT workflow for this project.
+description: Use this skill whenever a Seeed XIAO ESP32S3 or XIAO ESP32S3 Sense drives a WS2812/WS2812B/NeoPixel ring or strip, especially a dark ring, an Adafruit_NeoPixel RMT error ("not able to power down in light sleep"), or general NeoPixel color testing on arduino-esp32 core 3.x.
 compatibility: Windows, PowerShell 5.1, arduino-cli, ESP32 Arduino core 3.x
 ---
 
 # XIAO ESP32S3 NeoPixel
 
-Use the project-tested direct ESP-IDF RMT implementation rather than starting
-with `Adafruit_NeoPixel`. It was visually verified on a WCMCU-2812B-12 ring
-with a XIAO ESP32S3 Sense on D1/GPIO2.
+Drive the ring with ESP-IDF's RMT peripheral directly rather than
+`Adafruit_NeoPixel`. On arduino-esp32 core 3.2.0, `Adafruit_NeoPixel`'s RMT
+path can leave the `allow_pd` flag uninitialized; ESP32-S3 rejects a nonzero
+`allow_pd` because RMT can't retain state through light sleep, and the ring
+goes completely dark (not flickering, not wrong colors — nothing) even
+though wiring is correct. The symptom in serial output is `not able to power
+down in light sleep`. This is a toolchain quirk, not a hardware fault —
+verified on a WCMCU-2812B-12 (12-pixel) ring on D1/GPIO2.
 
-Read `NEOPIXEL_DEBUGGING.md` before changing a working setup. It records the
-actual hardware result and the reason the Adafruit RMT path failed on core
-3.2.0.
-
-## Verified Wiring
+## Verified wiring
 
 | Ring pin | XIAO connection |
 |---|---|
-| `DI` | D1 / GPIO2 |
-| `5V` / `VCC` | VBUS / 5V |
+| `DI` (data in, not `DO`) | Any free GPIO (D1/GPIO2 verified) |
+| `5V` / `VCC` | VBUS / 5V — **not** 3.3V-OUT, WS2812B needs it |
 | `GND` | GND |
-| `DO` | Unconnected |
+| `DO` | Unconnected (only used to chain to a second ring) |
 
-- Put an optional 330-470 ohm resistor in the data line (`D1 -> resistor -> DI`), never in the 5V line.
-- The ring has 12 pixels: set the count to `12`.
-- BNO055 uses D4/D5 and the XIAO Sense camera does not use D1, so neither
-  conflicts with the ring.
-- 3.3V data into a 5V WS2812B is marginal by specification. The verified ring
-  works directly; use a 74AHCT125/74HCT buffer if another ring remains dark.
+- An optional 330-470 ohm resistor goes in the data line only
+  (`GPIO -> resistor -> DI`), never in the 5V line — putting it on 5V drops
+  the ring's supply enough to cause erratic/no operation.
+- 3.3V data into a 5V WS2812B is marginal by spec but works in practice on
+  the verified ring; add a 74AHCT125/74HCT level shifter if another ring
+  stays dark despite passing every check below.
+- A ring drawing full brightness on all pixels can exceed USB current
+  limits — cap brightness (e.g. scale to ~25% of max) rather than debugging
+  phantom resets/brownouts that are actually a power budget problem.
 
-## Start With The Verified Test
+## Working driver (drop-in, no third-party library)
 
-The source of truth is:
+```cpp
+#include "driver/rmt_encoder.h"
+#include "driver/rmt_tx.h"
 
-```text
-firmware/master/neopixel_direct_rmt_test/neopixel_direct_rmt_test.ino
+#define NEOPIXEL_PIN   2   // change to your GPIO
+#define NEOPIXEL_COUNT 12  // change to your pixel count
+
+constexpr uint32_t RMT_RESOLUTION_HZ = 10 * 1000 * 1000;
+constexpr size_t SYMBOLS_PER_PIXEL = 24;
+constexpr uint8_t BRIGHTNESS_SCALE = 64;  // out of 255 -- keep low, see USB current note above
+rmt_channel_handle_t rmtChannel = nullptr;
+rmt_encoder_handle_t copyEncoder = nullptr;
+rmt_symbol_word_t frame[NEOPIXEL_COUNT * SYMBOLS_PER_PIXEL];
+
+void neoPixelBegin() {
+  rmt_tx_channel_config_t channelConfig = {};
+  channelConfig.gpio_num = static_cast<gpio_num_t>(NEOPIXEL_PIN);
+  channelConfig.clk_src = RMT_CLK_SRC_DEFAULT;
+  channelConfig.resolution_hz = RMT_RESOLUTION_HZ;
+  channelConfig.mem_block_symbols = 64;
+  channelConfig.trans_queue_depth = 1;
+  channelConfig.flags.allow_pd = 0;  // <-- the actual fix; ESP32-S3 can't retain RMT through light sleep
+  rmt_new_tx_channel(&channelConfig, &rmtChannel);
+  rmt_copy_encoder_config_t encoderConfig = {};
+  rmt_new_copy_encoder(&encoderConfig, &copyEncoder);
+  rmt_enable(rmtChannel);
+}
+
+// perPixel[i] = {r,g,b} for pixel i -- lets callers light only some pixels
+void neoPixelShowPixels(const uint8_t perPixel[NEOPIXEL_COUNT][3]) {
+  size_t symbolIndex = 0;
+  for (int pixel = 0; pixel < NEOPIXEL_COUNT; pixel++) {
+    uint8_t r = (uint16_t)perPixel[pixel][0] * BRIGHTNESS_SCALE / 255;
+    uint8_t g = (uint16_t)perPixel[pixel][1] * BRIGHTNESS_SCALE / 255;
+    uint8_t b = (uint16_t)perPixel[pixel][2] * BRIGHTNESS_SCALE / 255;
+    const uint8_t grb[] = {g, r, b};  // WS2812 wants GRB order, not RGB
+    for (int component = 0; component < 3; component++) {
+      for (int bit = 7; bit >= 0; bit--) {
+        const bool one = grb[component] & (1 << bit);
+        rmt_symbol_word_t &symbol = frame[symbolIndex++];
+        symbol.level0 = 1;
+        symbol.duration0 = one ? 8 : 4;   // 0.8us : 0.4us high, at 10MHz resolution
+        symbol.level1 = 0;
+        symbol.duration1 = one ? 5 : 9;   // 0.5us : 0.9us low
+      }
+    }
+  }
+  rmt_transmit_config_t transmitConfig = {};
+  rmt_transmit(rmtChannel, copyEncoder, frame, sizeof(frame), &transmitConfig);
+  rmt_tx_wait_all_done(rmtChannel, -1);
+}
+
+void neoPixelShow(uint8_t red, uint8_t green, uint8_t blue) {
+  uint8_t perPixel[NEOPIXEL_COUNT][3];
+  for (int i = 0; i < NEOPIXEL_COUNT; i++) { perPixel[i][0] = red; perPixel[i][1] = green; perPixel[i][2] = blue; }
+  neoPixelShowPixels(perPixel);
+}
 ```
 
-It does not use a third-party NeoPixel library. It initializes
-`rmt_tx_channel_config_t` to zero and explicitly sets `allow_pd = 0`, then
-sends all 12 GRB pixels with the ESP-IDF RMT peripheral.
+Call `neoPixelBegin()` once in `setup()`, then `neoPixelShow(r, g, b)` (whole
+ring one color) or `neoPixelShowPixels(...)` (per-pixel, e.g. only half the
+ring) whenever you need to change what's lit. A minimal test sketch: call
+`neoPixelBegin()`, then cycle `neoPixelShow()` through a few colors with
+`delay()` between them — all 12 (or however many) pixels should change
+together with no RMT error in serial output.
 
-```powershell
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 "firmware/master/neopixel_direct_rmt_test"
-arduino-cli upload -p <PORT> --fqbn esp32:esp32:XIAO_ESP32S3 "firmware/master/neopixel_direct_rmt_test"
-```
+## Diagnosing a dark ring
 
-Expected visual result: all 12 LEDs cycle magenta, red, green, and blue once
-per second. Expected serial result names the same four colors without an RMT
-error.
+1. Confirm `DI`, not `DO`, is wired to your data GPIO.
+2. Confirm ring `VCC` is on `VBUS`/5V and `GND` is shared with the board —
+   not on 3.3V.
+3. Don't diagnose WS2812 timing with a multimeter (it can't see
+   microsecond-scale pulses). Instead, flash a trivial sketch that just
+   toggles the data GPIO with `digitalWrite(pin, HIGH); delay(n);
+   digitalWrite(pin, LOW); delay(n);` and confirm with a meter in DC-voltage
+   mode (never current/mA mode) that the pin alternates ~3.3V/0V — this
+   proves the GPIO itself is healthy before you suspect the RMT driver.
+4. If that passes but the direct-RMT driver above still produces a dark
+   ring, try a 74AHCT125/74HCT level shifter and double-check the ring
+   isn't wired backwards (DI vs DO swapped).
+5. Don't move to a different GPIO until the toggle test above fails — a
+   confirmed clean high/low cycle means the pin is fine and the problem is
+   elsewhere (driver, ring itself, or power).
 
-## Diagnose A Dark Ring
+## Avoid these paths
 
-1. Check `DI`, not `DO`, is connected to D1.
-2. Check ring VCC is on VBUS/5V and GND is shared with the XIAO.
-3. Do not diagnose WS2812 timing with a multimeter. Flash
-   `firmware/master/d1_gpio_output_test/d1_gpio_output_test.ino` instead.
-4. Disconnect only ring DI, measure D1 to GND in DC-voltage mode. It must
-   alternate about 3.3V and 0V every five seconds.
-5. If D1 passes but the direct RMT test is still dark, use a 74AHCT125/74HCT
-   level shifter and verify the ring is not wired backwards.
-
-Never measure D1-to-GND in the meter's current/mA mode.
-
-## Avoid These Paths
-
-- Do not use `light_ws2812`: its AVR-specific timing implementation is not
-  appropriate for ESP32-S3.
-- On the installed ESP32 core 3.2.0, do not rely on the observed
-  `Adafruit_NeoPixel` RMT path after it logs `not able to power down in light
-  sleep`. Use direct RMT instead.
-- Do not move to D2/D3 until the D1 DC-output test fails. A confirmed D1
-  high/low cycle proves the pin itself is healthy.
-
-## Integrating Into SideEye
-
-Copy the RMT setup, GRB frame builder, and `showColor()` behavior from the
-verified test into `firmware/master/checkpoint1_hw_test`. Keep the BNO055 and
-buzzer paths unchanged. Apply SideEye's color contract:
-
-- Left lean: orange (`0xFF8000`)
-- Right lean: yellow (`0xFFFF00`)
-- Idle: off
-- Hardware-test boot/health/error states: white/green-or-blue/red
-
-Compile the integrated checkpoint sketch with:
-
-```powershell
-arduino-cli compile --fqbn esp32:esp32:XIAO_ESP32S3 --libraries "C:\Dev\WearableProjectEX\.arduino\libraries" "C:\Dev\WearableProjectEX\firmware\master\checkpoint1_hw_test"
-```
-
-Use a bounded serial reader for agent verification. A physical color change is
-the final proof, so ask the user to confirm it after upload.
+- Don't use `light_ws2812` — its timing implementation targets AVR, not
+  ESP32-S3.
+- Don't keep debugging `Adafruit_NeoPixel` once you see `not able to power
+  down in light sleep` in serial output on core 3.2.0+ — switch straight to
+  the direct RMT driver above instead of chasing library workarounds.
