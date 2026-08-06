@@ -182,33 +182,39 @@ void loop() {
   applyDebounced(label);
 }
 
-// Hold-then-lock: react instantly the moment a lean is classified (no
-// waiting for confirmation -- a real turn signal must snap on immediately).
-// The lean-then-return-to-center swing produces a brief opposite-direction
-// signal the model was never trained on (training data was static held-lean
-// windows, not the full natural gesture) -- instead of trying to tell that
-// apart from a real direction change, just hold whatever state a left/right
-// trigger set for HOLD_MS and ignore every classification in between.
-constexpr uint32_t HOLD_MS = 3000;
+// Real turn-signal cadence: ~90 flashes/min (SAE/ECE typical range is
+// 60-120/min) = 300ms on + 300ms off per blink. 5 blinks = exactly 3000ms.
+constexpr int BLINK_COUNT = 5;
+constexpr uint32_t BLINK_ON_MS = 300;
+constexpr uint32_t BLINK_OFF_MS = 300;
 const char *currentState = "idle";
-uint32_t holdUntil = 0;
+
+// Blocks for the full 5-blink sequence (3s) -- this IS the "no steering
+// recognized while the turn signal is running" behavior: loop() can't reach
+// the next IMU sample/classification until this returns, so there is no
+// separate lock flag to keep in sync. The lean-then-return-to-center swing
+// produces a brief opposite-direction signal the model was never trained on
+// (training data was static held-lean windows, not the full natural
+// gesture) -- blocking through it sidesteps having to tell that apart from
+// a real direction change.
+void blinkHalf(int start, int count) {
+  for (int i = 0; i < BLINK_COUNT; i++) {
+    neoPixelShowHalf(start, count, AMBER_R, AMBER_G, AMBER_B);
+    delay(BLINK_ON_MS);
+    neoPixelShow(0, 0, 0);
+    delay(BLINK_OFF_MS);
+  }
+}
 
 void applyDebounced(const char *label) {
-  if (millis() < holdUntil) {
-    return;  // locked -- ignore classification, keep showing currentState
-  }
-
   currentState = label;
-  if (strcmp(label, "left") == 0 || strcmp(label, "right") == 0) {
-    holdUntil = millis() + HOLD_MS;
-  }
 
   // pixels 0 and 6 stay dark (excluded on request) -- skip the first pixel
   // of each half, light the remaining 5.
   if (strcmp(currentState, "left") == 0) {
-    neoPixelShowHalf(LEFT_HALF_START + 1, HALF_COUNT - 1, AMBER_R, AMBER_G, AMBER_B);
+    blinkHalf(LEFT_HALF_START + 1, HALF_COUNT - 1);
   } else if (strcmp(currentState, "right") == 0) {
-    neoPixelShowHalf(RIGHT_HALF_START + 1, HALF_COUNT - 1, AMBER_R, AMBER_G, AMBER_B);
+    blinkHalf(RIGHT_HALF_START + 1, HALF_COUNT - 1);
   } else {
     neoPixelShow(0, 0, 0);
   }
